@@ -1,0 +1,14 @@
+[project]
+name = "wiki-mcp-remote"
+version = "0.1.0"
+description = "MCP server that fetches Wikipedia summaries and links"
+readme = "README.md"
+requires-python = ">=3.13"
+
+dependencies = [
+    "httpx>=0.28.1",
+    "mcp[cli]>=1.18.0",
+    "pydantic>=2.12.3",
+    "python-dotenv>=1.1.1",
+    "wikipedia>=1.4.0",
+]
