@@ -1,11 +1,16 @@
 import os
+import json
 import wikipedia
 from mcp.server.fastmcp import FastMCP
 from mcp.server.auth.settings import AuthSettings
 from pydantic import AnyHttpUrl
 from dotenv import load_dotenv
 
+from starlette.responses import JSONResponse
+from starlette.routing import Route
+
 from utils.auth import create_auth0_verifier
+
 
 # Load environment variables from .env file
 load_dotenv()
@@ -40,6 +45,64 @@ mcp = FastMCP(
     ),
 )
 
+
+# Publish OAuth metadata at a well-known URL
+async def oauth_metadata(request):
+    return JSONResponse(
+        {
+            "issuer": f"https://{auth0_domain}/",
+            "authorization_endpoint": f"https://{auth0_domain}/authorize",
+            "token_endpoint": f"https://{auth0_domain}/oauth/token",
+            "scopes_supported": [
+                "openid", "profile", "email", "address", "phone", "insurance.quote"
+            ],
+        }
+    )
+
+# Register the route
+mcp.app.routes.append(Route(
+    "/.well-known/oauth-protected-resource",
+    oauth_metadata
+))
+
+
+@mcp.tool(
+    securitySchemes=[{"type": "oauth2", "scopes": ["insurance.quote"]}]
+)
+def personalized_insurance_quote(zip_code: str, coverage_level: str) -> str:
+    """
+    Fetch a personalized insurance quote for a given zip code and coverage level.
+    Requires OAuth2 authentication.
+    """
+    # Check for token in headers
+    headers = mcp.current_request_headers.get()
+    token = headers.get("Authorization") if headers else None
+
+    if not token or not token.startswith("Bearer "):
+        # Return an error with WWW-Authenticate metadata to trigger login UI
+        return {
+            "content": [{
+                "type": "text",
+                "text": "Authentication required: no access token provided."
+            }],
+            "isError": True,
+            "_meta": {
+                "mcp/www_authenticate": [
+                    f'Bearer resource_metadata="https://{auth0_domain}/.well-known/oauth-protected-resource", '
+                    'error="invalid_token", '
+                    'error_description="You need to login to continue"'
+                ]
+            }
+        }
+
+    # If token is present, validate and proceed
+    # (replace with real backend call)
+    return (
+        f"Personalized insurance quote for {zip_code} with {coverage_level} coverage: "
+        f"$123/month (example data)."
+    )
+
+
 @mcp.tool()
 def fetch_wikipedia_summary(topic: str) -> str:
     """
@@ -72,6 +135,7 @@ def fetch_wikipedia_summary(topic: str) -> str:
     except Exception as e:
         raise Exception(f"Error fetching Wikipedia data: {str(e)}")
 
+
 @mcp.tool()
 def fetch_instructions(prompt_name: str) -> str:
     """
@@ -89,6 +153,7 @@ def fetch_instructions(prompt_name: str) -> str:
     prompt_path = os.path.join(script_dir, "prompts", f"{prompt_name}.md")
     with open(prompt_path, "r") as f:
         return f.read()
+
 
 if __name__ == "__main__":
     mcp.run(transport='streamable-http')
